@@ -24,6 +24,7 @@ const micInstance = mic({
   channels: "1",
   encoding: "signed-integer",
   endian: "little",
+  device: "default",
 });
 const micStream = micInstance.getAudioStream();
 

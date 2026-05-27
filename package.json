@@ -17,6 +17,10 @@
   "devDependencies": {
     "@types/bun": "latest",
     "@types/node": "^25.3.3",
+    "node-gyp": "^12.3.0",
     "typescript": "^5.9.3"
-  }
+  },
+  "trustedDependencies": [
+    "speaker"
+  ]
 }
