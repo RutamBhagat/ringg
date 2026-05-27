@@ -13,6 +13,11 @@ const config = {
 };
 
 const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+const speaker = new Speaker({
+  channels: 1,
+  bitDepth: 16,
+  sampleRate: 24000,
+});
 
 await ai.live.connect({
   model,
@@ -30,6 +35,14 @@ await ai.live.connect({
 
       if (serverContent?.outputTranscription?.text) {
         process.stdout.write(`\nAI: ${serverContent.outputTranscription.text}`);
+      }
+
+      const parts = serverContent?.modelTurn?.parts ?? [];
+      for (const part of parts) {
+        const audio = part.inlineData?.data;
+        if (audio) {
+          speaker.write(Buffer.from(audio, "base64"));
+        }
       }
     },
     onerror: (event: ErrorEvent) => {
