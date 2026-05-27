@@ -75,3 +75,10 @@ micStream.on("data", (chunk: Buffer) => {
 micStream.on("error", (error: Error) => {
   console.error("Mic error:", error);
 });
+
+process.on("SIGINT", () => {
+  micInstance.stop();
+  speaker.end();
+  session.close();
+  process.exit(0);
+});
