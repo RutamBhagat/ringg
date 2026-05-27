@@ -13,3 +13,30 @@ const config = {
 };
 
 const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+
+await ai.live.connect({
+  model,
+  config,
+  callbacks: {
+    onopen: () => {
+      console.log("Connected. Speak into your mic.");
+    },
+    onmessage: (message: LiveServerMessage) => {
+      const serverContent = message.serverContent;
+
+      if (serverContent?.inputTranscription?.text) {
+        process.stdout.write(`\nYou: ${serverContent.inputTranscription.text}`);
+      }
+
+      if (serverContent?.outputTranscription?.text) {
+        process.stdout.write(`\nAI: ${serverContent.outputTranscription.text}`);
+      }
+    },
+    onerror: (event: ErrorEvent) => {
+      console.error("Gemini Live error:", event.message);
+    },
+    onclose: (event: CloseEvent) => {
+      console.log("Gemini Live closed:", event.reason);
+    },
+  },
+});
