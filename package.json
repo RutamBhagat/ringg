@@ -8,13 +8,15 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@google/genai": "latest",
-    "mic": "latest",
-    "speaker": "latest"
+    "@google/genai": "^1.43.0",
+    "@t3-oss/env-core": "^0.13.11",
+    "mic": "^2.1.2",
+    "speaker": "^0.5.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/node": "latest",
-    "typescript": "latest"
+    "@types/node": "^25.3.3",
+    "typescript": "^5.9.3"
   }
 }
