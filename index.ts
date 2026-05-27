@@ -76,9 +76,12 @@ micStream.on("error", (error: Error) => {
   console.error("Mic error:", error);
 });
 
-process.on("SIGINT", () => {
+function shutdown() {
   micInstance.stop();
   speaker.end();
   session.close();
   process.exit(0);
-});
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
