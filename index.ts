@@ -18,13 +18,22 @@ const speaker = new Speaker({
   bitDepth: 16,
   sampleRate: 24000,
 });
+const micInstance = mic({
+  rate: "16000",
+  bitwidth: "16",
+  channels: "1",
+  encoding: "signed-integer",
+  endian: "little",
+});
+const micStream = micInstance.getAudioStream();
 
-await ai.live.connect({
+const session = await ai.live.connect({
   model,
   config,
   callbacks: {
     onopen: () => {
       console.log("Connected. Speak into your mic.");
+      micInstance.start();
     },
     onmessage: (message: LiveServerMessage) => {
       const serverContent = message.serverContent;
@@ -52,4 +61,17 @@ await ai.live.connect({
       console.log("Gemini Live closed:", event.reason);
     },
   },
+});
+
+micStream.on("data", (chunk: Buffer) => {
+  session.sendRealtimeInput({
+    audio: {
+      data: chunk.toString("base64"),
+      mimeType: "audio/pcm;rate=16000",
+    },
+  });
+});
+
+micStream.on("error", (error: Error) => {
+  console.error("Mic error:", error);
 });
