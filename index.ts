@@ -5,16 +5,26 @@ import {
   type LiveServerMessage,
 } from "@google/genai";
 import mic from "mic";
+import { VoiceActivityDetector } from "realtime-vad";
 import Speaker from "speaker";
 
 import { env } from "./env/server.ts";
 
 const model = "gemini-3.1-flash-live-preview";
-const speechThreshold = 700;
-const silenceChunksBeforeEnd = 8;
+const sampleRate = 16000;
+const vadFrameDurationMs = 30;
+const vadPreSpeechFrameCount = 10;
+const vadSpeechThreshold = 0.1;
 const config = {
   responseModalities: [Modality.AUDIO],
-  systemInstruction: "You are a helpful and friendly AI assistant.",
+  systemInstruction: "You are Rental Kanojo Chizuru Mizuhara.",
+  speechConfig: {
+    voiceConfig: {
+      prebuiltVoiceConfig: {
+        voiceName: "Aoede",
+      },
+    },
+  },
   outputAudioTranscription: {},
   inputAudioTranscription: {},
   realtimeInputConfig: {
@@ -26,9 +36,19 @@ const config = {
 };
 
 const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+const vad = new VoiceActivityDetector({
+  sampleRate,
+  channels: 1,
+  bitsPerSample: 16,
+  frameDurationMs: vadFrameDurationMs,
+  speechThreshold: vadSpeechThreshold,
+  silenceDebounceMs: 600,
+});
+await vad.init();
+
 let speaker = createSpeaker();
 const micInstance = mic({
-  rate: "16000",
+  rate: sampleRate.toString(),
   bitwidth: "16",
   channels: "1",
   encoding: "signed-integer",
@@ -38,7 +58,9 @@ const micInstance = mic({
 const micStream = micInstance.getAudioStream();
 let userIsSpeaking = false;
 let aiIsSpeaking = false;
-let silenceChunks = 0;
+let pendingMicAudio = Buffer.alloc(0);
+let micProcessing = Promise.resolve();
+const preSpeechFrames: Buffer[] = [];
 
 const session = await ai.live.connect({
   model,
@@ -46,7 +68,6 @@ const session = await ai.live.connect({
   callbacks: {
     onopen: () => {
       console.log("Connected. Speak into your mic.");
-      micInstance.start();
     },
     onmessage: (message: LiveServerMessage) => {
       const serverContent = message.serverContent;
@@ -85,46 +106,73 @@ const session = await ai.live.connect({
   },
 });
 
-micStream.on("data", (chunk: Buffer) => {
-  const speechDetected = getPcmRms(chunk) > speechThreshold;
-
-  if (!speechDetected && !userIsSpeaking) {
+vad.on("speechStart", () => {
+  if (userIsSpeaking) {
     return;
   }
 
+  if (aiIsSpeaking) {
+    stopSpeakerPlayback();
+    aiIsSpeaking = false;
+  }
+
+  userIsSpeaking = true;
+  session.sendRealtimeInput({ activityStart: {} });
+
+  for (const frame of preSpeechFrames) {
+    sendAudioFrame(frame);
+  }
+});
+
+vad.on("speechEnd", () => {
   if (!userIsSpeaking) {
-    if (aiIsSpeaking) {
-      stopSpeakerPlayback();
-      aiIsSpeaking = false;
-    }
-
-    userIsSpeaking = true;
-    session.sendRealtimeInput({ activityStart: {} });
+    return;
   }
 
-  if (speechDetected) {
-    silenceChunks = 0;
-  } else {
-    silenceChunks += 1;
-  }
+  userIsSpeaking = false;
+  session.sendRealtimeInput({ activityEnd: {} });
+});
 
-  session.sendRealtimeInput({
-    audio: {
-      data: chunk.toString("base64"),
-      mimeType: "audio/pcm;rate=16000",
-    },
+micStream.on("data", (chunk: Buffer) => {
+  pendingMicAudio = Buffer.concat([pendingMicAudio, chunk]);
+  micProcessing = micProcessing.then(processPendingMicAudio).catch((error) => {
+    console.error("VAD error:", error);
   });
-
-  if (silenceChunks >= silenceChunksBeforeEnd) {
-    userIsSpeaking = false;
-    silenceChunks = 0;
-    session.sendRealtimeInput({ activityEnd: {} });
-  }
 });
 
 micStream.on("error", (error: Error) => {
   console.error("Mic error:", error);
 });
+
+micInstance.start();
+
+function sendAudioFrame(frame: Buffer) {
+  session.sendRealtimeInput({
+    audio: {
+      data: frame.toString("base64"),
+      mimeType: "audio/pcm;rate=16000",
+    },
+  });
+}
+
+async function processPendingMicAudio() {
+  while (pendingMicAudio.length >= vad.chunkBytes) {
+    const frame = pendingMicAudio.subarray(0, vad.chunkBytes);
+    pendingMicAudio = pendingMicAudio.subarray(vad.chunkBytes);
+
+    const wasSpeaking = userIsSpeaking;
+    preSpeechFrames.push(frame);
+    if (preSpeechFrames.length > vadPreSpeechFrameCount) {
+      preSpeechFrames.shift();
+    }
+
+    await vad.processAudioChunk(frame);
+
+    if (wasSpeaking) {
+      sendAudioFrame(frame);
+    }
+  }
+}
 
 function createSpeaker() {
   return new Speaker({
@@ -137,22 +185,6 @@ function createSpeaker() {
 function stopSpeakerPlayback() {
   speaker.close(false);
   speaker = createSpeaker();
-}
-
-function getPcmRms(chunk: Buffer) {
-  let sumOfSquares = 0;
-  const sampleCount = Math.floor(chunk.length / 2);
-
-  if (sampleCount === 0) {
-    return 0;
-  }
-
-  for (let index = 0; index < sampleCount; index += 1) {
-    const sample = chunk.readInt16LE(index * 2);
-    sumOfSquares += sample * sample;
-  }
-
-  return Math.sqrt(sumOfSquares / sampleCount);
 }
 
 function shutdown() {
