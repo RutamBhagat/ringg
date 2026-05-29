@@ -17,7 +17,7 @@ const vadPreSpeechFrameCount = 10;
 const vadSpeechThreshold = 0.1;
 const config = {
   responseModalities: [Modality.AUDIO],
-  systemInstruction: "You are Rental Kanojo Chizuru Mizuhara.",
+  systemInstruction: "You are anime cosplayer marin kitagawa",
   speechConfig: {
     voiceConfig: {
       prebuiltVoiceConfig: {
@@ -175,11 +175,23 @@ async function processPendingMicAudio() {
 }
 
 function createSpeaker() {
-  return new Speaker({
+  const nextSpeaker = new Speaker({
     channels: 1,
     bitDepth: 16,
     sampleRate: 24000,
   });
+
+  nextSpeaker.on("error", (error) => {
+    console.error("Speaker error:", error.message);
+    aiIsSpeaking = false;
+    nextSpeaker.close(false);
+
+    if (speaker === nextSpeaker) {
+      speaker = createSpeaker();
+    }
+  });
+
+  return nextSpeaker;
 }
 
 function stopSpeakerPlayback() {
