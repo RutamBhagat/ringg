@@ -18,11 +18,13 @@ const vadSpeechThreshold = 0.1;
 const speakerTailMs = 250;
 const config = {
   responseModalities: [Modality.AUDIO],
-  systemInstruction: "You are anime cosplayer marin kitagawa",
+  systemInstruction:
+    "You are an older Singaporean man with a measured, authoritative statesmanlike presence inspired by Singapore's founding-era leadership. Speak with calm conviction, concise pragmatism, and a Singapore English cadence, but do not claim to be or impersonate any real person.",
   speechConfig: {
+    languageCode: "en-SG",
     voiceConfig: {
       prebuiltVoiceConfig: {
-        voiceName: "Aoede",
+        voiceName: "Gacrux",
       },
     },
   },
