@@ -15,6 +15,7 @@ const sampleRate = 16000;
 const vadFrameDurationMs = 30;
 const vadPreSpeechFrameCount = 10;
 const vadSpeechThreshold = 0.1;
+const speakerTailMs = 250;
 const config = {
   responseModalities: [Modality.AUDIO],
   systemInstruction: "You are anime cosplayer marin kitagawa",
@@ -58,6 +59,7 @@ const micInstance = mic({
 const micStream = micInstance.getAudioStream();
 let userIsSpeaking = false;
 let aiIsSpeaking = false;
+let suppressMicUntil = 0;
 let pendingMicAudio = Buffer.alloc(0);
 let micProcessing = Promise.resolve();
 const preSpeechFrames: Buffer[] = [];
@@ -93,7 +95,9 @@ const session = await ai.live.connect({
         const audio = part.inlineData?.data;
         if (audio) {
           aiIsSpeaking = true;
-          speaker.write(Buffer.from(audio, "base64"));
+          const audioBuffer = Buffer.from(audio, "base64");
+          suppressMicForAudio(audioBuffer.length);
+          speaker.write(audioBuffer);
         }
       }
     },
@@ -111,9 +115,9 @@ vad.on("speechStart", () => {
     return;
   }
 
-  if (aiIsSpeaking) {
-    stopSpeakerPlayback();
-    aiIsSpeaking = false;
+  if (micInputIsSuppressed()) {
+    clearMicAudio();
+    return;
   }
 
   userIsSpeaking = true;
@@ -134,6 +138,11 @@ vad.on("speechEnd", () => {
 });
 
 micStream.on("data", (chunk: Buffer) => {
+  if (micInputIsSuppressed()) {
+    clearMicAudio();
+    return;
+  }
+
   pendingMicAudio = Buffer.concat([pendingMicAudio, chunk]);
   micProcessing = micProcessing.then(processPendingMicAudio).catch((error) => {
     console.error("VAD error:", error);
@@ -155,8 +164,30 @@ function sendAudioFrame(frame: Buffer) {
   });
 }
 
+function suppressMicForAudio(byteLength: number) {
+  const audioDurationMs = (byteLength / 2 / 24000) * 1000;
+  suppressMicUntil =
+    Math.max(suppressMicUntil - speakerTailMs, Date.now()) +
+    audioDurationMs +
+    speakerTailMs;
+}
+
+function micInputIsSuppressed() {
+  return aiIsSpeaking || Date.now() < suppressMicUntil;
+}
+
+function clearMicAudio() {
+  pendingMicAudio = Buffer.alloc(0);
+  preSpeechFrames.length = 0;
+}
+
 async function processPendingMicAudio() {
   while (pendingMicAudio.length >= vad.chunkBytes) {
+    if (micInputIsSuppressed()) {
+      clearMicAudio();
+      return;
+    }
+
     const frame = pendingMicAudio.subarray(0, vad.chunkBytes);
     pendingMicAudio = pendingMicAudio.subarray(vad.chunkBytes);
 
@@ -182,6 +213,10 @@ function createSpeaker() {
   });
 
   nextSpeaker.on("error", (error) => {
+    if (speaker !== nextSpeaker && error.message === "write() failed: 0") {
+      return;
+    }
+
     console.error("Speaker error:", error.message);
     aiIsSpeaking = false;
     nextSpeaker.close(false);
