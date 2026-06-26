@@ -15,6 +15,7 @@ const sampleRate = 16000;
 const vadFrameDurationMs = 30;
 const vadPreSpeechFrameCount = 10;
 const vadSpeechThreshold = 0.1;
+const vadSilenceDebounceMs = 1400;
 const speakerTailMs = 250;
 const config = {
   responseModalities: [Modality.AUDIO],
@@ -44,7 +45,7 @@ const vad = new VoiceActivityDetector({
   bitsPerSample: 16,
   frameDurationMs: vadFrameDurationMs,
   speechThreshold: vadSpeechThreshold,
-  silenceDebounceMs: 600,
+  silenceDebounceMs: vadSilenceDebounceMs,
 });
 await vad.init();
 
